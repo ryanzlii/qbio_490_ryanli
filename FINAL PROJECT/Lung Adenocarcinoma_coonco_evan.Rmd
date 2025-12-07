@@ -1,0 +1,382 @@
+---
+title: "Lung Adenocarcinoma"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+
+if (!require("knitr", quietly = TRUE))
+install.packages("knitr")
+if (!require("BiocManager", quietly = TRUE))
+install.packages("BiocManager")
+BiocManager::install(version = "3.21")
+if (!require("TCGAbiolinks", quietly = TRUE))
+BiocManager::install("TCGAbiolinks")
+if (!require("maftools", quietly = TRUE))
+BiocManager::install("maftools")
+library(BiocManager)
+library(TCGAbiolinks)
+library(maftools)
+
+if(!dir.exists("output")) {dir.create("output")}
+```
+
+```{r}
+ knitr::opts_knit$set(root.dir = normalizePath("/home1/ebsauer/490_cluster/analysis_data"))
+```
+
+```{r}
+clin_query <- GDCquery(project = "TCGA-LUAD",
+data.category = "Clinical",
+data.type = "Clinical Supplement",
+data.format = 'BCR Biotab')
+GDCdownload(clin_query)
+clinical.BCRtab.all <- GDCprepare(clin_query)
+clinic <- clinical.BCRtab.all$clinical_patient_luad[-c(1,2),]
+```
+
+```{r}
+colnames(clinic)[ colnames(clinic) == "bcr_patient_barcode" ] <-
+"Tumor_Sample_Barcode"
+maf_query <- GDCquery(
+  project = 'TCGA-LUAD',
+  data.category = "Simple Nucleotide Variation",
+  access = "open", 
+  data.type = "Masked Somatic Mutation",
+  workflow.type = "Aliquot Ensemble Somatic Variant Merging and Masking"
+  )
+
+GDCdownload(maf_query)
+
+maf <- GDCprepare(maf_query)
+
+
+maf_object <- read.maf(maf = maf,
+                       clinicalData = clinic, 
+                       isTCGA = TRUE)
+```
+
+
+
+```{r}
+  
+# mask <- ifelse(maf_object@clinical.data$vital_status == 'Alive', T, F)
+# 
+# masked_barcodes <- maf_object@clinical.data[mask,]
+
+oncoplot(maf = maf_object, top = 20)
+
+```
+```{r}
+# Make a subset of healthy patients and compare to the cancerous patients
+
+# clinic$gender <- ifelse(clinic$gender == "0", "FEMALE", "MALE")
+
+# mut_samples <- unique(maf_object@data$Tumor_Sample_Barcode)
+
+female_ids <- maf_object@clinical.data$Tumor_Sample_Barcode[maf_object@clinical.data$gender == "FEMALE"]
+
+male_ids   <- maf_object@clinical.data$Tumor_Sample_Barcode[maf_object@clinical.data$gender == "MALE"]
+
+female_maf <- subsetMaf(maf_object, tsb = female_ids)
+male_maf   <- subsetMaf(maf_object, tsb = male_ids)
+
+```
+
+
+```{r}
+coOncoplot(m1 = female_maf,
+m2 =male_maf,
+m1Name = "Female Patients",
+m2Name = "Male Patients",
+gene)
+```
+```{r}
+# years_smoked <- maf_object@clinical.data$tobacco_smoking_pack_years_smoked
+
+maf_object@clinical.data$smoking_status <- ifelse(
+  is.na(maf_object@clinical.data$tobacco_smoking_pack_years_smoked), NA,
+  ifelse(maf_object@clinical.data$tobacco_smoking_pack_years_smoked >= 40, "SMOKER", "NONSMOKER")
+)
+
+mut_samples <- unique(maf_object@data$Tumor_Sample_Barcode)
+
+Smoking_ids <- maf_object@clinical.data$Tumor_Sample_Barcode[
+  maf_object@clinical.data$smoking_status == "SMOKER"]
+
+Nonsmoking_ids <- maf_object@clinical.data$Tumor_Sample_Barcode[
+  maf_object@clinical.data$smoking_status == "NONSMOKER"]
+
+smoking_maf <- subsetMaf(maf_object, tsb = Smoking_ids)
+
+nonsmoking_maf   <- subsetMaf(maf_object, tsb = Nonsmoking_ids)
+```
+
+```{r}
+coOncoplot(m1 = smoking_maf,
+m2 =nonsmoking_maf,
+m1Name = "Heavy smoking Patients (>40)",
+m2Name = "Light smoking Patients", titleFontSize = 1, geneNamefont = 1)
+```
+```{r}
+clinic$death_days_to <- is.na(clinic$death_days_to)
+
+clinic$death_days_to <- clinic$death_days_to[na_mask]
+
+maf_object@clinical.data$tobacco_smoking_pack_years_smoked <- ifelse(
+  is.na(maf_object@clinical.data$tobacco_smoking_pack_years_smoked), NA,
+  ifelse(maf_object@clinical.data$tobacco_smoking_pack_years_smoked >= 100, "SMOKER", "NONSMOKER")
+)
+# clinic$smoking <- ifelse(maf_object@clinical.data$tobacco_smoking_pack_years_smoked >= 100, "SMOKER", "NONSMOKER")
+
+mut_samples <- unique(maf_object@data$Tumor_Sample_Barcode)
+
+Smoking_ids <- maf_object@clinical.data$Tumor_Sample_Barcode[maf_object@clinical.data$smoking == "SMOKER"]
+
+Nonsmoking_ids   <- maf_object@clinical.data$Tumor_Sample_Barcode[maf_object@clinical.data$smoking == "NONSMOKER"]
+
+smoking_maf <- subsetMaf(maf_object, tsb = Smoking_ids)
+
+nonsmoking_maf   <- subsetMaf(maf_object, tsb = Nonsmoking_ids)
+boxplot(death_days_to ~ tobacco_smoking_pack_years_smoked)
+#clinil$survival_time <- ifelse(clean)
+#na_mask <- 
+```
+```{r}
+female_smokers_ids    <- intersect(female_ids, Smoking_ids)
+female_nonsmokers_ids <- intersect(female_ids, Nonsmoking_ids)
+
+maf_female_smokers <- subsetMaf(maf_object, tsb = female_smokers_ids)
+maf_female_nonsmokers <- subsetMaf(maf_object, tsb = female_nonsmokers_ids)
+
+male_smokers_ids    <- intersect(male_ids, Smoking_ids)
+male_nonsmokers_ids <- intersect(male_ids, Nonsmoking_ids)
+
+maf_male_smokers <- subsetMaf(maf_object, tsb = male_smokers_ids)
+maf_male_nonsmokers <- subsetMaf(maf_object, tsb = male_nonsmokers_ids)
+```
+
+```{r}
+coOncoplot(m1 = maf_female_smokers,
+m2 =maf_female_nonsmokers,
+m1Name = "Heavy smoking Females",
+m2Name = "Non-Heavy smoking Females", titleFontSize = 1.1, geneNamefont = 1, genes = c("RYR2", "TP53","KEAP1", "STK11", "EGFR"))
+
+
+
+
+```
+```{r}
+coOncoplot(m1 = maf_male_smokers,
+m2 =maf_male_nonsmokers,
+m1Name = "Heavy smoking Males",
+m2Name = "Non-Heavy smoking Males", titleFontSize = 1.2, geneNamefont = 1, genes = c("TP53", "KEAP1", "STK11", "EGFR", "RYR2"))
+```
+
+
+
+```{r}
+rna_query <- GDCquery(project ="TCGA-LUAD",
+data.category = "Transcriptome Profiling",
+data.type = "Gene Expression Quantification",
+workflow.type = "STAR - Counts")
+GDCdownload(rna_query)
+
+```
+
+```{r}
+install.packages("ggplot2")
+library(ggplot2)
+BiocManager::install("EnhancedVolcano", force = TRUE)
+library(EnhancedVolcano)
+```
+#KM PLOT SUBSETTING LIGHT MODERATE AND HEAVY SMOKERS (RYAN)
+ 
+```{r}
+library(TCGAbiolinks)
+library(survival)
+library(survminer)
+library(maftools)
+ 
+luad_clinical <- GDCquery_clinic(project = "TCGA-LUAD", type = "clinical")
+luad_clinical$pack_years_smoked <- as.numeric(luad_clinical$pack_years_smoked)
+luad_clinical <- luad_clinical[!is.na(luad_clinical$pack_years_smoked), ]
+ 
+luad_clinical$smoking_group <- NA #cheesae burgar
+ 
+luad_clinical$smoking_group[luad_clinical$pack_years_smoked <= 20] <- "Light <20PY"
+luad_clinical$smoking_group[luad_clinical$pack_years_smoked > 20 & 
+                            luad_clinical$pack_years_smoked <= 40] <- "Moderate <40PY >20PY"
+luad_clinical$smoking_group[luad_clinical$pack_years_smoked > 40] <- "Heavy Smoker"
+ 
+ 
+ 
+# (1 = Dead, 0 = Alive)
+luad_clinical$surv_status <- ifelse(luad_clinical$vital_status == "Dead", 1, 0)
+ 
+# Creating tien columb
+luad_clinical$surv_time <- ifelse(luad_clinical$vital_status == "Dead",
+                                  luad_clinical$days_to_death,
+                                  luad_clinical$days_to_last_follow_up)
+ 
+#luad_clinical$surv_time <- as.numeric(luad_clinical$surv_time)
+final_df <- luad_clinical[!is.na(luad_clinical$surv_time) & !is.na(luad_clinical$surv_status), ]
+ 
+ 
+#final_df <- final_df[final_df$smoking_group, =! "Heavy Smoker"]
+ 
+ 
+ 
+fit_object <- survfit(Surv(surv_time, surv_status) ~ smoking_group, data = final_df)
+ 
+survplot <- ggsurvplot(
+  fit_object,
+  data = final_df,
+  pval = TRUE,
+  risk.table = TRUE, 
+  ggtheme = theme(plot.margin = unit(c(1,1,1,1), "cm")),
+  legend = "top" 
+ 
+)
+ 
+ 
+KM_plot <- survplot$plot + theme_bw() + theme(
+  axis.title = element_text(size=20),
+  axis.text = element_text(size=16),
+  legend.title = element_text(size=14),
+  legend.text = element_text(size=12),
+  legend.position = "top" 
+)
+ 
+ggsave("output/SmokerKMPlot.pdf", plot = KM_plot, width = 16, height = 10, dpi = 300)
+print(KM_plot)
+ 
+ 
+```
+ 
+ 
+ 
+ 
+#ENHANCED VOLCANO PLOT COMPARING HEAVY WITH LIGHT SMOKERS (RYAN)
+```{r}
+ 
+library(TCGAbiolinks)
+library(survival)
+library(survminer)
+library(maftools)
+ 
+if (!require("DESeq2", quietly = TRUE))
+  BiocManager::install("DESeq2")
+library(DESeq2)
+ 
+if (!require("SummarizedExperiment", quietly = TRUE))
+  BiocManager::install("SummarizedExperiment")
+library(SummarizedExperiment)
+ 
+if (!require("EnhancedVolcano", quietly = TRUE))
+  BiocManager::install("EnhancedVolcano")
+library(EnhancedVolcano)
+ 
+ 
+rna_query <- GDCquery(project ="TCGA-LUAD",
+                      data.category = "Transcriptome Profiling",
+                      data.type = "Gene Expression Quantification",
+                      workflow.type = "STAR - Counts")
+ 
+#GDCdownload(rna_query)
+ 
+rna_se <- GDCprepare(rna_query)
+ 
+geneExpr <- rowSums(assays(rna_se)$unstranded)
+rna_se_filtered <- rna_se[geneExpr >= 1000]
+rna_clinical <- rna_se@colData
+colnames_mask <- !(colnames(rna_clinical) %in% c("treatments", "primary_site", "disease_type", 
+                                                 "sites_of_involvement"))
+rna_clinical <- rna_clinical[,colnames_mask]
+rna_clinical$vital_status <- factor(rna_clinical$vital_status)
+rna_clinical <- as.data.frame(rna_clinical)
+rna_genes <- rna_se@rowRanges@elementMetadata
+rna_genes <- as.data.frame(rna_genes)
+ 
+rna_counts <- rna_se@assays@data$unstranded
+rna_counts <- as.data.frame(rna_counts)
+rownames(rna_counts) <- rna_genes$gene_id
+colnames(rna_counts) <- rownames(rna_clinical)
+ 
+ 
+keep_genes <- rowSums(rna_counts) >= 10
+filtered_rna_counts <- rna_counts[keep_genes,]
+ 
+#cheese burgr
+rna_clinical$pack_years_smoked <- as.numeric(as.character(rna_clinical$pack_years_smoked))
+ 
+has_pack_years <- !is.na(rna_clinical$pack_years_smoked)
+rna_clinical_clean <- rna_clinical[has_pack_years, ]
+ 
+rna_clinical_clean$smoking_category <- NA
+ 
+rna_clinical_clean$smoking_category[rna_clinical_clean$pack_years_smoked < 20] <- "Light"
+ 
+rna_clinical_clean$smoking_category[rna_clinical_clean$pack_years_smoked >= 20 & 
+                                    rna_clinical_clean$pack_years_smoked < 40] <- "Moderate"
+ 
+rna_clinical_clean$smoking_category[rna_clinical_clean$pack_years_smoked >= 40] <- "Heavy"
+ 
+rna_clinical_clean$smoking_category <- factor(rna_clinical_clean$smoking_category, 
+                                              levels = c("Light", "Moderate", "Heavy"))
+ 
+rna_clinical_clean <- rna_clinical_clean[!is.na(rna_clinical_clean$smoking_category),]
+ 
+common_ids <- intersect(rownames(rna_clinical_clean), colnames(filtered_rna_counts))
+rna_clinical_final <- rna_clinical_clean[common_ids, ]
+rna_counts_final <- filtered_rna_counts[, common_ids]
+ 
+dds <- DESeqDataSetFromMatrix(countData = rna_counts_final,
+                              colData = rna_clinical_final,
+                              design = ~ smoking_category)
+#dds_obj <- DESeq(dds)
+ 
+saveRDS(dds_obj, file = "dds_smoking_analysis.rds")
+dds_obj <- readRDS("dds_smoking_analysis.rds")
+ 
+res <- results(dds_obj, contrast = c("smoking_category", "Heavy", "Light"))
+res_df <- as.data.frame(res)
+res_df$gene_name <- rna_genes$gene_name[match(rownames(res_df), rna_genes$gene_id)]
+ILikePoop69420 <- EnhancedVolcano(res_df,
+                lab = res_df$gene_name,
+                x = 'log2FoldChange',
+                y = 'padj',
+                title = 'Heavy Smokers (>40PY) vs Light Smokers (<20PY)',
+                subtitle = 'Positive FC = Upregulated in Heavy Smokers',
+                pCutoff = 0.05,
+                FCcutoff = 1.0,  # We can check for 2-fold change now
+                pointSize = 2.0,
+                xlim = c(-7, 7),
+                labSize = 5.0)
+ggsave("output/Volcano_Plot_Large.pdf", plot = ILikePoop69420, width = 12, height = 10, dpi = 300)
+ 
+ 
+#EnhancedVolcano(
+ # results,
+  #lab = rownames(results),      # Gene names as labels
+#  x = 'log2FoldChange',         # Log2 fold changes
+ # y = 'padj',                   # Adjusted p-values
+  #pCutoff = 1.3,                # P-value threshold
+  #cutoff = 1.0,               # Fold change cutoff (for both 1 and -1)
+  #title = 'Volcano Plot: Female vs Male',
+  #xlab = 'Log2 Fold Change (Female vs Male)',
+  #ylab = '-Log10 Adjusted P-value',
+    # Colors for points
+#)
+```
+
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
